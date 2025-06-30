@@ -1,0 +1,143 @@
+from dash import Dash, dcc, html, dash_table, Input, Output
+import pandas as pd
+import plotly.express as px
+from AnimalShelter_Local import AnimalShelter
+from pymongo import MongoClient
+import os
+os.environ["JUPYTER_PLATFORM_DIRS"] = "1"
+
+# MongoDB connection
+client = MongoClient('localhost', 27017)
+db = client['AAC']
+collection = db['animals']
+
+df = pd
+
+df = pd.read_csv('aac_shelter_outcomes.csv')
+df.columns = df.columns.str.strip().str.replace(' ', '_').str.lower()
+shelter = AnimalShelter()
+
+data = shelter.read()
+df = pd.DataFrame(data)
+
+
+
+
+app = Dash(__name__)
+app.title = "Grazioso Salvare Dashboard"
+
+app.layout = html.Div([
+    html.A(
+        html.Img(src='/assets/Grazioso_Salvare_Logo.png', style={'width': '200px'}),
+        href="https://www.snhu.edu",
+        target="_blank"
+    ),
+
+    html.H1("Grazioso Salvare Rescue Dog Dashboard", style={'textAlign': 'center'}),
+
+    html.Div([
+        html.Label("Select Rescue Type:"),
+        dcc.Dropdown(
+            id='rescue-type',
+            options=[
+                {'label': 'Water Rescue', 'value': 'Water Rescue'},
+                {'label': 'Mountain or Wilderness Rescue', 'value': 'Mountain or Wilderness Rescue'},
+                {'label': 'Disaster or Individual Tracking', 'value': 'Disaster or Individual Tracking'},
+                {'label': 'Reset', 'value': 'Reset'}
+            ],
+            value='Reset'
+        )
+    ], style={'width': '50%', 'margin': 'auto'}),
+
+    html.Br(),
+
+    dash_table.DataTable(
+        id='datatable',
+        columns=[{"name": i, "id": i} for i in df.columns],
+        data=df.to_dict('records'),
+        page_size=10,
+        style_table={'overflowX': 'auto'},
+        style_cell={'textAlign': 'left'},
+        style_header={'fontWeight': 'bold'}
+    ),
+
+    html.Br(),
+
+    dcc.Graph(id='map-chart'),
+    html.Br(),
+    dcc.Graph(id='second-chart'),
+
+    html.Footer("Created by Lara Walker", style={'textAlign': 'center', 'marginTop': '40px'})
+])
+
+
+@app.callback(
+    [Output('datatable', 'data'),
+     Output('map-chart', 'figure'),
+     Output('second-chart', 'figure')],
+    [Input('rescue-type', 'value')]
+)
+def update_dashboard(rescue_type):
+    query = {}
+
+    if rescue_type == "Water Rescue":
+        query = {
+            "breed": {"$in": ["Labrador Retriever Mix", "Chesapeake Bay Retriever", "Newfoundland"]},
+            "sex_upon_outcome": "Intact Female",
+            "age_upon_outcome_in_weeks": {"$gte": 26, "$lte": 156}
+        }
+    elif rescue_type == "Mountain or Wilderness Rescue":
+        query = {
+            "breed": {"$in": ["German Shepherd", "Alaskan Malamute", "Old English Sheepdog", "Siberian Husky", "Rottweiler"]},
+            "sex_upon_outcome": "Intact Male",
+            "age_upon_outcome_in_weeks": {"$gte": 26, "$lte": 156}
+        }
+    elif rescue_type == "Disaster or Individual Tracking":
+        query = {
+            "breed": {"$in": ["Doberman Pinscher", "German Shepherd", "Golden Retriever", "Bloodhound", "Rottweiler"]},
+            "sex_upon_outcome": "Intact Male",
+            "age_upon_outcome_in_weeks": {"$gte": 20, "$lte": 300}
+        }
+
+    filtered_data = shelter.read(query)
+    filtered_df = pd.DataFrame(filtered_data)
+
+    print("Rescue type:", rescue_type)
+    print("Query used:", query)
+    print("Filtered count:", len(filtered_df))
+    print("Columns:", filtered_df.columns.tolist())
+    print("Sample rows:", filtered_df.head())
+
+
+    if 'location_lat' in filtered_df.columns and 'location_long' in filtered_df.columns:
+        map_fig = px.scatter_mapbox(
+            filtered_df,
+            lat='location_lat',
+            lon='location_long',
+            hover_name='breed',
+            zoom=10
+        )
+        map_fig.update_layout(mapbox_style='open-street-map')
+    else:
+        map_fig = {}
+
+    if 'breed' in filtered_df.columns:
+        second_fig = px.pie(
+            filtered_df,
+            names='breed',
+            title='Breed Distribution for Selected Rescue Type'
+        )
+    else:
+        second_fig = {}
+
+    return filtered_df.to_dict('records'), map_fig, second_fig
+
+
+
+
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+
+
+
